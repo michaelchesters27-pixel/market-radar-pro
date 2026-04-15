@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const ENGINE_VERSION = 'market-radar-pro-v16-fixed';
+const ENGINE_VERSION = 'market-radar-pro-v17';
 const timeframes = ['15m', '1h', '4h'];
 
 const templates = {
@@ -42,6 +42,28 @@ function minutesUntil(iso) {
   return Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
 }
 
+function applyEntryGate(signal) {
+  if (signal.strength_score >= 70) {
+    return signal;
+  }
+
+  if (signal.strength_score >= 65) {
+    return {
+      ...signal,
+      entry_text: 'None',
+      entry_status: 'Waiting',
+      reason: `${signal.reason} Entry hidden because strength is below 70.`
+    };
+  }
+
+  return {
+    ...signal,
+    entry_text: 'None',
+    entry_status: 'None',
+    reason: `${signal.reason} Entry hidden because strength is below 70.`
+  };
+}
+
 function buildSignal(asset, timeframe) {
   const base = templates[asset.symbol] || {
     state: 'Consolidating',
@@ -59,7 +81,7 @@ function buildSignal(asset, timeframe) {
 
   const tfAdjust = timeframe === '15m' ? 0 : timeframe === '1h' ? -4 : -8;
 
-  const signal = {
+  let signal = {
     asset_id: asset.id,
     symbol: asset.symbol,
     timeframe,
@@ -88,6 +110,8 @@ function buildSignal(asset, timeframe) {
     signal.entry_text = 'None';
     signal.reason = `${signal.reason} Context only on 4H. Use for direction, not immediate entry.`;
   }
+
+  signal = applyEntryGate(signal);
 
   return signal;
 }
@@ -269,4 +293,3 @@ export async function handler() {
     });
   }
 }
-
