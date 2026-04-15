@@ -1,5 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
+function json(statusCode, payload) {
+  return {
+    statusCode,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  };
+}
+
 function minutesUntil(iso) {
   return Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
 }
@@ -8,13 +16,17 @@ function signalAffectedByEvent(row, event) {
   const symbol = row.symbol || '';
   const cls = row.asset_class || '';
   const affected = Array.isArray(event.affected_assets) ? event.affected_assets : [];
+
   if (affected.includes(symbol)) return true;
   if (affected.includes(cls)) return true;
+
   const currency = event.currency || '';
   if (!currency) return false;
+
   if (symbol.includes(`${currency}/`) || symbol.includes(`/${currency}`)) return true;
   if (cls === 'metal' && currency === 'USD') return true;
   if (cls === 'index' && (currency === 'USD' || (currency === 'GBP' && symbol === 'UK100'))) return true;
+
   return false;
 }
 
@@ -23,7 +35,7 @@ export async function handler() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
-    return new Response(JSON.stringify({ ok: false, error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' }), { status: 500, headers: { 'content-type': 'application/json' } });
+    return json(500, { ok: false, error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' });
   }
 
   try {
@@ -64,6 +76,7 @@ export async function handler() {
       .gte('event_time', new Date(Date.now() - 5 * 60 * 1000).toISOString())
       .lte('event_time', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
       .order('event_time', { ascending: true });
+
     if (newsError) throw newsError;
 
     const signals = (data || []).map((row) => {
@@ -81,6 +94,7 @@ export async function handler() {
       const nextEvent = relevantEvents[0];
       const mins = minutesUntil(nextEvent.event_time);
       const label = mins <= 0 ? `${nextEvent.event_name} live` : `${nextEvent.event_name} in ${mins} min`;
+
       return {
         ...flattened,
         news_risk: label,
@@ -88,8 +102,18 @@ export async function handler() {
       };
     });
 
-    return new Response(JSON.stringify({ source: 'supabase', generated_at: new Date().toISOString(), signals }), { headers: { 'content-type': 'application/json' } });
+    return json(200, {
+      source: 'supabase',
+      generated_at: new Date().toISOString(),
+      signals
+    });
   } catch (error) {
-    return new Response(JSON.stringify({ source: 'error', generated_at: new Date().toISOString(), error: error.message, signals: [] }), { status: 500, headers: { 'content-type': 'application/json' } });
+    return json(500, {
+      source: 'error',
+      generated_at: new Date().toISOString(),
+      error: error.message,
+      signals: []
+    });
   }
 }
+ 
