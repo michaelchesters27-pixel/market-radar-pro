@@ -8,10 +8,6 @@ function json(statusCode, payload) {
   };
 }
 
-function minutesUntil(iso) {
-  return Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
-}
-
 function signalAffectedByEvent(row, event) {
   const symbol = row.symbol || '';
   const cls = row.asset_class || '';
@@ -85,19 +81,22 @@ export async function handler() {
         display_name: row.assets?.display_name || row.symbol,
         asset_class: row.assets?.asset_class || 'unknown',
         underlying_symbol: row.assets?.underlying_symbol || null,
-        sort_order: row.assets?.sort_order || 9999
+        sort_order: row.assets?.sort_order || 9999,
+        news_event_name: null,
+        news_event_time: null,
+        news_event_status: null
       };
 
       const relevantEvents = (upcomingNews || []).filter((event) => signalAffectedByEvent(flattened, event));
       if (!relevantEvents.length) return flattened;
 
       const nextEvent = relevantEvents[0];
-      const mins = minutesUntil(nextEvent.event_time);
-      const label = mins <= 0 ? `${nextEvent.event_name} live` : `${nextEvent.event_name} in ${mins} min`;
 
       return {
         ...flattened,
-        news_risk: label,
+        news_event_name: nextEvent.event_name || null,
+        news_event_time: nextEvent.event_time || null,
+        news_event_status: nextEvent.event_status || null,
         news_level: nextEvent.impact_level || flattened.news_level
       };
     });
