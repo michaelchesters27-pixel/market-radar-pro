@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Market Radar Pro</title>
+  <meta name="description" content="Scanner for forex, crypto and metals with market state, news risk, volume confirmation and top-pick highlighting." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">
+          <span class="brand-dot"></span>
+          <span class="brand-grid"></span>
+        </div>
+        <div>
+          <p class="eyebrow">Market Intelligence</p>
+          <h1>Market Radar Pro</h1>
+        </div>
+      </div>
+
+      <div class="panel market-panel">
+        <div class="panel-head compact-head">
+          <div>
+            <p class="eyebrow">Market Rail</p>
+            <h2>Scanned Assets</h2>
+          </div>
+        </div>
+
+        <div class="market-tabs" id="marketRailTabs">
+          <button class="market-tab active" data-value="all">All</button>
+          <button class="market-tab" data-value="forex">Forex</button>
+          <button class="market-tab" data-value="crypto">Crypto</button>
+          <button class="market-tab" data-value="metal">Metals</button>
+          <button class="market-tab" data-value="index">Indices</button>
+        </div>
+
+        <div class="market-rail" id="marketRail"></div>
+      </div>
+
+      <div class="panel filters-panel">
+        <div class="panel-head">
+          <h2>Filters</h2>
+          <button id="clearFilters" class="ghost-btn">Reset</button>
+        </div>
+
+        <div class="filter-group">
+          <label>Asset Class</label>
+          <div class="pill-row" id="assetFilter">
+            <button class="pill active" data-value="all">All</button>
+            <button class="pill" data-value="forex">Forex</button>
+            <button class="pill" data-value="crypto">Crypto</button>
+            <button class="pill" data-value="metal">Metals</button>
+            <button class="pill" data-value="index">Indices</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label>Timeframe</label>
+          <div class="pill-row" id="timeframeFilter">
+            <button class="pill active" data-value="all">All</button>
+            <button class="pill" data-value="15m">15m</button>
+            <button class="pill" data-value="1h">1h</button>
+            <button class="pill" data-value="4h">4h</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label>State</label>
+          <div class="pill-row" id="stateFilter">
+            <button class="pill active" data-value="all">All</button>
+            <button class="pill" data-value="Bullish">Bullish</button>
+            <button class="pill" data-value="Bearish">Bearish</button>
+            <button class="pill" data-value="Consolidating">Consolidating</button>
+          </div>
+        </div>
+
+        <div class="filter-stack">
+          <label class="check-row">
+            <input type="checkbox" id="validOnlyFilter" />
+            <span>Valid entries only</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" id="topPickOnlyFilter" />
+            <span>Top pick only</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" id="hideHighRiskFilter" />
+            <span>Hide high news risk</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel legend-panel">
+        <div class="panel-head">
+          <h2>Signal Key</h2>
+        </div>
+        <div class="legend-list">
+          <div class="legend-item"><span class="state-pill bullish">Bullish</span><p>Directional strength is biased higher.</p></div>
+          <div class="legend-item"><span class="state-pill bearish">Bearish</span><p>Directional strength is biased lower.</p></div>
+          <div class="legend-item"><span class="state-pill consolidating">Consolidating</span><p>Compression or mixed flow. Usually ignore.</p></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Scanner Dashboard • Build V16</p>
+          <h2>Forex, crypto, metals and indices. No chart clutter.</h2>
+        </div>
+        <div class="toolbar-actions">
+          <button id="refreshBtn" class="primary-btn">Refresh Scan</button>
+          <div class="status-badge live-badge" id="liveStatus"><span class="live-dot"></span><span class="status-copy">LIVE — Loading scanner...</span></div>
+        </div>
+      </header>
+
+      <section class="hero-grid">
+        <div class="hero-card top-pick-card" id="topPickCard">
+          <div class="card-label-row">
+            <span class="card-label">Top Pick Today</span>
+            <span class="ring-indicator">Green Ring Active</span>
+          </div>
+          <div id="topPickContent"></div>
+        </div>
+
+        <div class="summary-grid" id="summaryGrid"></div>
+      </section>
+
+      <section class="panel board-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Scanner Board</h2>
+            <p class="muted" id="boardMeta">Live board of all scanned markets.</p>
+          </div>
+          <div class="search-wrap">
+            <input type="text" id="searchInput" placeholder="Search symbol..." />
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Type</th>
+                <th>TF</th>
+                <th>State</th>
+                <th>Strength</th>
+                <th>Volume</th>
+                <th>Bias</th>
+                <th>News</th>
+                <th>Entry</th>
+                <th>Status</th>
+                <th>Pick</th>
+              </tr>
+            </thead>
+            <tbody id="scannerTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="summaryCardTemplate">
+    <div class="summary-card">
+      <div>
+        <p class="summary-label"></p>
+        <h3 class="summary-value"></h3>
+      </div>
+      <span class="summary-trace"></span>
+    </div>
+  </template>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
