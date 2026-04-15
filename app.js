@@ -374,7 +374,6 @@ const fallbackSignals = [
   },
 ];
 
-
 function expandSignalsAcrossTimeframes(baseSignals) {
   const timeframeProfiles = {
     '15m': { strengthAdjust: 0, entryMode: 'fast' },
@@ -420,7 +419,6 @@ function expandSignalsAcrossTimeframes(baseSignals) {
     });
   });
 }
-
 
 const state = {
   asset: 'all',
@@ -635,6 +633,9 @@ function renderTopPick(data) {
     return;
   }
 
+  const topEntryText = (top.strength_score || 0) >= 70 ? top.entry_text : 'None';
+  const topEntryStatus = (top.strength_score || 0) >= 70 ? top.entry_status : ((top.strength_score || 0) >= 65 ? 'Waiting' : 'None');
+
   topPickContent.innerHTML = `
     <div class="top-pick-symbol">
       <div class="symbol-badge">${top.symbol.replace('/USD', '').slice(0, 3)}</div>
@@ -647,8 +648,8 @@ function renderTopPick(data) {
       <div class="metric-box"><p>Strength</p><p>${top.strength_score}/100</p></div>
       <div class="metric-box"><p>Volume</p><p>${top.volume_status}</p></div>
       <div class="metric-box"><p>News Risk</p><p>${top.news_risk}</p></div>
-      <div class="metric-box"><p>Suggested Entry</p><p>${top.entry_text}</p></div>
-      <div class="metric-box"><p>Entry Status</p><p>${top.entry_status}</p></div>
+      <div class="metric-box"><p>Suggested Entry</p><p>${topEntryText}</p></div>
+      <div class="metric-box"><p>Entry Status</p><p>${topEntryStatus}</p></div>
       <div class="metric-box"><p>Bias</p><p>${top.bias_note}</p></div>
     </div>
     <div class="top-pick-reason">${top.reason}</div>
@@ -660,7 +661,10 @@ function renderTable(data) {
   state.selectedSymbol = selectedSymbol;
 
   scannerTableBody.innerHTML = data.map(item => {
-    const statusClass = item.entry_status.toLowerCase();
+    const displayEntryText = (item.strength_score || 0) >= 70 ? item.entry_text : 'None';
+    const displayEntryStatus = (item.strength_score || 0) >= 70 ? item.entry_status : ((item.strength_score || 0) >= 65 ? 'Waiting' : 'None');
+
+    const statusClass = displayEntryStatus.toLowerCase();
     const newsClass = item.news_level;
     const pickCell = item.is_top_pick ? '<span class="pick-pill top">Top Pick</span>' : '';
     const rowClass = item.is_top_pick ? 'green-ring-row' : '';
@@ -681,8 +685,8 @@ function renderTable(data) {
         <td>${item.volume_status}</td>
         <td>${item.bias_note}</td>
         <td><span class="news-pill ${newsClass}">${item.news_risk}</span></td>
-        <td>${item.entry_text}</td>
-        <td><span class="status-pill ${statusClass}">${item.entry_status}</span></td>
+        <td>${displayEntryText}</td>
+        <td><span class="status-pill ${statusClass}">${displayEntryStatus}</span></td>
         <td>${pickCell}</td>
       </tr>
     `;
