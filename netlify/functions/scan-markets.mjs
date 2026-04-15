@@ -30,16 +30,35 @@ const templates = {
   'UK100': { state: 'Bearish', strength_score: 70, confidence_score: 67, confidence_level: 'Medium', volume_status: 'Selling Pressure', bias_note: 'UK Weakness', news_risk: 'No major news', news_level: 'low', entry_text: '7700 - 7720', entry_status: 'Near', reason: 'Downside pressure following rejection from highs.' }
 };
 
+function json(statusCode, payload) {
+  return {
+    statusCode,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  };
+}
+
 function minutesUntil(iso) {
   return Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
 }
 
 function buildSignal(asset, timeframe) {
   const base = templates[asset.symbol] || {
-    state: 'Consolidating', strength_score: 50, confidence_score: 50, confidence_level: 'Low', volume_status: 'Mixed', bias_note: 'No Clear Bias', news_risk: 'No major news', news_level: 'low', entry_text: 'None', entry_status: 'Waiting', reason: 'Default placeholder logic.'
+    state: 'Consolidating',
+    strength_score: 50,
+    confidence_score: 50,
+    confidence_level: 'Low',
+    volume_status: 'Mixed',
+    bias_note: 'No Clear Bias',
+    news_risk: 'No major news',
+    news_level: 'low',
+    entry_text: 'None',
+    entry_status: 'Waiting',
+    reason: 'Default placeholder logic.'
   };
 
   const tfAdjust = timeframe === '15m' ? 0 : timeframe === '1h' ? -4 : -8;
+
   const signal = {
     asset_id: asset.id,
     symbol: asset.symbol,
@@ -55,20 +74,19 @@ function buildSignal(asset, timeframe) {
     entry_text: base.entry_text,
     entry_status: base.entry_status,
     reason: base.reason,
-    is_top_pick: false,
-    scan_run_id: null
+    is_top_pick: false
   };
 
   if (timeframe === '1h') {
-    signal.entry_text = signal.state === 'Consolidating' ? 'None' : 'Wait for 1H confirmation';
-    signal.entry_status = 'Waiting';
-    signal.reason = `${signal.state} structure on 1H with cleaner directional context.`;
+    signal.entry_status = signal.entry_status === 'Valid' ? 'Waiting' : signal.entry_status;
+    signal.entry_text = signal.entry_text === 'None' ? 'None' : 'Watch 15m for confirmation';
+    signal.reason = `${signal.reason} Higher timeframe supportive, but entry is refined on 15m.`;
   }
 
   if (timeframe === '4h') {
-    signal.entry_text = 'None';
     signal.entry_status = 'None';
-    signal.reason = `${signal.state} higher-timeframe bias on 4H. Use for direction, not immediate entry.`;
+    signal.entry_text = 'None';
+    signal.reason = `${signal.reason} Context only on 4H. Use for direction, not immediate entry.`;
   }
 
   return signal;
@@ -78,12 +96,15 @@ function eventAffectsSignal(signal, event) {
   const symbol = signal.symbol;
   const affectedAssets = Array.isArray(event.affected_assets) ? event.affected_assets : [];
   if (affectedAssets.includes(symbol)) return true;
+
   const currency = event.currency || '';
   if (!currency) return false;
+
   if (symbol.includes(`${currency}/`) || symbol.includes(`/${currency}`)) return true;
   if (symbol.startsWith('XAU/') || symbol.startsWith('XAG/')) return currency === 'USD';
   if (['US500', 'NAS100', 'US30'].includes(symbol)) return currency === 'USD';
   if (symbol === 'UK100') return currency === 'GBP' || currency === 'USD';
+
   return false;
 }
 
@@ -91,22 +112,40 @@ function applyNews(signals, newsEvents) {
   return signals.map((signal) => {
     const relevant = (newsEvents || []).filter((event) => eventAffectsSignal(signal, event));
     if (!relevant.length) return signal;
+
     const next = relevant[0];
     const mins = minutesUntil(next.event_time);
     const label = mins <= 0 ? `${next.event_name} live` : `${next.event_name} in ${mins} min`;
+
     let entryStatus = signal.entry_status;
     if (next.impact_level === 'high' && mins <= 30 && signal.timeframe === '15m') {
       entryStatus = 'Waiting';
     }
-    return { ...signal, news_risk: label, news_level: next.impact_level || signal.news_level, entry_status: entryStatus };
+
+    return {
+      ...signal,
+      news_risk: label,
+      news_level: next.impact_level || signal.news_level,
+      entry_status: entryStatus
+    };
   });
 }
 
 function markTopPick(signals, minScore) {
-  signals.forEach((row) => { row.is_top_pick = false; });
+  signals.forEach((row) => {
+    row.is_top_pick = false;
+  });
+
   const pick = signals
-    .filter((row) => row.timeframe === '15m' && row.entry_status === 'Valid' && row.news_level !== 'high' && row.state !== 'Consolidating' && row.strength_score >= minScore)
+    .filter((row) =>
+      row.timeframe === '15m' &&
+      row.entry_status === 'Valid' &&
+      row.news_level !== 'high' &&
+      row.state !== 'Consolidating' &&
+      row.strength_score >= minScore
+    )
     .sort((a, b) => b.strength_score - a.strength_score)[0];
+
   if (pick) pick.is_top_pick = true;
   return pick?.symbol || null;
 }
@@ -116,7 +155,7 @@ export async function handler() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
-    return new Response(JSON.stringify({ ok: false, error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' }), { status: 500, headers: { 'content-type': 'application/json' } });
+    return json(500, { ok: false, error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' });
   }
 
   try {
@@ -148,7 +187,12 @@ export async function handler() {
 
     const { data: runRows, error: runStartError } = await supabase
       .from('scanner_runs')
-      .insert([{ status: 'running', assets_scanned: 0, engine_version: ENGINE_VERSION, notes: 'Scheduled/manual scan started' }])
+      .insert([{
+        status: 'running',
+        assets_scanned: 0,
+        engine_version: ENGINE_VERSION,
+        notes: 'Scheduled/manual scan started'
+      }])
       .select('id')
       .limit(1);
     if (runStartError) throw runStartError;
@@ -183,22 +227,46 @@ export async function handler() {
       .upsert(upsertRows, { onConflict: 'asset_id,timeframe' });
     if (upsertError) throw upsertError;
 
-    const historyRows = upsertRows.map((row) => ({ ...row }));
-    const { error: historyError } = await supabase.from('signal_history').insert(historyRows);
+    const { error: historyError } = await supabase
+      .from('signal_history')
+      .insert(upsertRows.map((row) => ({ ...row })));
     if (historyError) throw historyError;
 
     const { error: runEndError } = await supabase
       .from('scanner_runs')
-      .update({ status: 'completed', assets_scanned: assets.length, top_pick_symbol: topPickSymbol, completed_at: new Date().toISOString() })
+      .update({
+        status: 'completed',
+        assets_scanned: assets.length,
+        top_pick_symbol: topPickSymbol,
+        completed_at: new Date().toISOString()
+      })
       .eq('id', runId);
     if (runEndError) throw runEndError;
 
-    return new Response(JSON.stringify({ ok: true, mode: 'supabase', run_id: runId, scanned_assets: assets.length, signal_rows: upsertRows.length, top_pick_symbol: topPickSymbol, updated_at: new Date().toISOString() }), { headers: { 'content-type': 'application/json' } });
+    return json(200, {
+      ok: true,
+      mode: 'supabase',
+      run_id: runId,
+      scanned_assets: assets.length,
+      signal_rows: upsertRows.length,
+      top_pick_symbol: topPickSymbol,
+      updated_at: new Date().toISOString()
+    });
   } catch (error) {
     try {
       const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-      await supabase.from('scanner_runs').insert([{ status: 'failed', assets_scanned: 0, engine_version: ENGINE_VERSION, notes: String(error.message || error) }]);
+      await supabase.from('scanner_runs').insert([{
+        status: 'failed',
+        assets_scanned: 0,
+        engine_version: ENGINE_VERSION,
+        notes: String(error.message || error)
+      }]);
     } catch {}
-    return new Response(JSON.stringify({ ok: false, error: error.message || 'Unknown scanner error' }), { status: 500, headers: { 'content-type': 'application/json' } });
+
+    return json(500, {
+      ok: false,
+      error: error.message || 'Unknown scanner error'
+    });
   }
 }
+
