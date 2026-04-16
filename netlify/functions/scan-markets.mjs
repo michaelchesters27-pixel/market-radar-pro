@@ -1,68 +1,61 @@
 import { createClient } from '@supabase/supabase-js';
 
-const ENGINE_VERSION = 'market-radar-pro-v20-indices-15m-search';
+const ENGINE_VERSION = 'market-radar-pro-v21-forex-15m';
 const SCAN_TIMEFRAME = '15m';
-const INDEX_SYMBOLS = ['NAS100', 'US500', 'UK100', 'US30'];
-
-const SEARCH_HINTS = {
-  NAS100: ['Nasdaq 100', 'NDX', 'Nasdaq-100'],
-  US500: ['S&P 500', 'SPX', 'S&P500'],
-  UK100: ['FTSE 100', 'FTSE'],
-  US30: ['Dow Jones', 'DJI', 'Dow Jones Industrial Average']
-};
+const FOREX_SYMBOLS = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'EUR/JPY'];
 
 const FALLBACKS = {
-  NAS100: {
+  'EUR/USD': {
     state: 'Bullish',
-    strength_score: 85,
-    confidence_score: 83,
+    strength_score: 79,
+    confidence_score: 76,
     confidence_level: 'High',
-    volume_status: 'Buying Pressure',
-    bias_note: 'Tech Strength',
+    volume_status: 'Rising',
+    bias_note: 'USD Weak',
     news_risk: 'No major news',
     news_level: 'low',
-    entry_text: '18200 - 18250',
-    entry_status: 'Valid',
-    reason: 'Fallback template used because live index candles were unavailable.'
-  },
-  US500: {
-    state: 'Bullish',
-    strength_score: 82,
-    confidence_score: 80,
-    confidence_level: 'High',
-    volume_status: 'Confirmed',
-    bias_note: 'Risk-On Sentiment',
-    news_risk: 'No major news',
-    news_level: 'low',
-    entry_text: '5250 - 5260',
-    entry_status: 'Valid',
-    reason: 'Fallback template used because live index candles were unavailable.'
-  },
-  UK100: {
-    state: 'Bearish',
-    strength_score: 70,
-    confidence_score: 67,
-    confidence_level: 'Medium',
-    volume_status: 'Selling Pressure',
-    bias_note: 'UK Weakness',
-    news_risk: 'No major news',
-    news_level: 'low',
-    entry_text: '7700 - 7720',
+    entry_text: '1.0842 - 1.0848',
     entry_status: 'Near',
-    reason: 'Fallback template used because live index candles were unavailable.'
+    reason: 'Fallback template used because live forex candles were unavailable.'
   },
-  US30: {
+  'GBP/USD': {
     state: 'Consolidating',
-    strength_score: 55,
-    confidence_score: 52,
+    strength_score: 44,
+    confidence_score: 41,
     confidence_level: 'Low',
-    volume_status: 'Mixed',
+    volume_status: 'Quiet',
     bias_note: 'Mixed Sentiment',
     news_risk: 'No major news',
     news_level: 'low',
     entry_text: 'None',
     entry_status: 'Waiting',
-    reason: 'Fallback template used because live index candles were unavailable.'
+    reason: 'Fallback template used because live forex candles were unavailable.'
+  },
+  'USD/JPY': {
+    state: 'Bearish',
+    strength_score: 74,
+    confidence_score: 72,
+    confidence_level: 'Medium',
+    volume_status: 'Selling Pressure',
+    bias_note: 'Yen Strength',
+    news_risk: 'No major news',
+    news_level: 'low',
+    entry_text: '154.18 - 154.24',
+    entry_status: 'Valid',
+    reason: 'Fallback template used because live forex candles were unavailable.'
+  },
+  'EUR/JPY': {
+    state: 'Bullish',
+    strength_score: 76,
+    confidence_score: 73,
+    confidence_level: 'High',
+    volume_status: 'Buying Pressure',
+    bias_note: 'Euro Strength',
+    news_risk: 'No major news',
+    news_level: 'low',
+    entry_text: '168.42 - 168.58',
+    entry_status: 'Valid',
+    reason: 'Fallback template used because live forex candles were unavailable.'
   }
 };
 
@@ -140,78 +133,27 @@ function parseCandles(payload) {
     .reverse();
 }
 
-async function twelveGet(url) {
-  const res = await fetch(url, { method: 'GET' });
-  const data = await res.json();
-  if (!res.ok || data.status === 'error') {
-    throw new Error(data.message || 'Twelve Data request failed');
-  }
-  return data;
-}
-
-function scoreSearchMatch(result, appSymbol) {
-  const hay = `${result.symbol || ''} ${result.instrument_name || ''} ${result.exchange || ''} ${result.country || ''}`.toLowerCase();
-  const hints = (SEARCH_HINTS[appSymbol] || []).map(x => x.toLowerCase());
-
-  let score = 0;
-
-  for (const hint of hints) {
-    if (hay.includes(hint)) score += 5;
-  }
-
-  if ((result.instrument_type || '').toLowerCase().includes('index')) score += 8;
-  if ((result.exchange || '').toLowerCase().includes('index')) score += 2;
-  if ((result.country || '').toLowerCase().includes('united states') && appSymbol !== 'UK100') score += 2;
-  if ((result.country || '').toLowerCase().includes('united kingdom') && appSymbol === 'UK100') score += 3;
-
-  return score;
-}
-
-async function resolveTwelveSymbol(appSymbol, apiKey) {
-  const url = new URL('https://api.twelvedata.com/symbol_search');
-  url.searchParams.set('symbol', SEARCH_HINTS[appSymbol]?.[0] || appSymbol);
-  url.searchParams.set('apikey', apiKey);
-
-  const data = await twelveGet(url.toString());
-  const items = Array.isArray(data.data) ? data.data : [];
-
-  if (!items.length) {
-    throw new Error(`No symbol search results for ${appSymbol}`);
-  }
-
-  const ranked = items
-    .map(item => ({ ...item, _score: scoreSearchMatch(item, appSymbol) }))
-    .sort((a, b) => b._score - a._score);
-
-  const best = ranked[0];
-
-  if (!best?.symbol) {
-    throw new Error(`Could not resolve Twelve Data symbol for ${appSymbol}`);
-  }
-
-  return best.symbol;
-}
-
-async function fetchCandles(resolvedSymbol, interval, apiKey) {
+async function fetchCandles(symbol, interval, apiKey) {
   const url = new URL('https://api.twelvedata.com/time_series');
-  url.searchParams.set('symbol', resolvedSymbol);
+  url.searchParams.set('symbol', symbol);
   url.searchParams.set('interval', interval);
   url.searchParams.set('outputsize', '120');
   url.searchParams.set('timezone', 'UTC');
   url.searchParams.set('apikey', apiKey);
 
-  const data = await twelveGet(url.toString());
-  const candles = parseCandles(data);
+  const res = await fetch(url.toString(), { method: 'GET' });
+  const data = await res.json();
 
+  if (!res.ok || data.status === 'error') {
+    throw new Error(`Twelve Data ${symbol} ${interval}: ${data.message || 'request failed'}`);
+  }
+
+  const candles = parseCandles(data);
   if (candles.length < 60) {
-    throw new Error(`Not enough candles for ${resolvedSymbol} ${interval}`);
+    throw new Error(`Not enough candles for ${symbol} ${interval}`);
   }
 
   return candles;
-}
-
-function minutesUntil(iso) {
-  return Math.round((new Date(iso).getTime() - Date.now()) / 60000);
 }
 
 function getLondonHour(date = new Date()) {
@@ -223,19 +165,24 @@ function getLondonHour(date = new Date()) {
   return Number(fmt.format(date));
 }
 
+function formatFxPrice(symbol, value) {
+  const decimals = symbol.includes('JPY') ? 3 : 4;
+  return Number(value).toFixed(decimals);
+}
+
 function getBiasNote(symbol, state) {
+  const [base, quote] = symbol.split('/');
+
   if (state === 'Bullish') {
-    if (symbol === 'NAS100') return 'Tech Strength';
-    if (symbol === 'US500') return 'Risk-On Sentiment';
-    if (symbol === 'US30') return 'Industrial Bid';
-    if (symbol === 'UK100') return 'UK Equity Strength';
+    if (quote === 'USD') return 'USD Weak';
+    if (base === 'USD') return `${quote} Weak`;
+    return `${base} Strength`;
   }
 
   if (state === 'Bearish') {
-    if (symbol === 'NAS100') return 'Tech Weakness';
-    if (symbol === 'US500') return 'Risk-Off Sentiment';
-    if (symbol === 'US30') return 'Industrial Weakness';
-    if (symbol === 'UK100') return 'UK Weakness';
+    if (quote === 'USD') return `${base} Weak`;
+    if (base === 'USD') return 'USD Strength';
+    return `${quote} Strength`;
   }
 
   return 'Mixed Sentiment';
@@ -322,7 +269,7 @@ function buildFallbackSignal(asset) {
   });
 }
 
-function buildIndexSignal(asset, candles) {
+function buildForexSignal(asset, candles) {
   const closes = candles.map(c => c.close);
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
@@ -332,9 +279,9 @@ function buildIndexSignal(asset, candles) {
 
   const ema20 = ema(closes.slice(-30), 20);
   const ema50 = ema(closes.slice(-60), 50);
-  const atr14Value = atr(candles, 14) || Math.abs(last.high - last.low) || 1;
+  const atr14Value = atr(candles, 14) || Math.abs(last.high - last.low) || 0.0001;
   const avgRange14 = averageRange(candles, 14) || atr14Value;
-  const avgBody10 = averageBody(candles, 10) || Math.abs(last.close - last.open) || 1;
+  const avgBody10 = averageBody(candles, 10) || Math.abs(last.close - last.open) || 0.0001;
   const lastBody = Math.abs(last.close - last.open);
   const bodyRatio = lastBody / avgBody10;
   const rangeRatio = atr14Value / avgRange14;
@@ -415,7 +362,7 @@ function buildIndexSignal(asset, candles) {
     if (state === 'Bullish') {
       const zoneLow = Math.min(ema20, last.low);
       const zoneHigh = Math.max(ema20, last.low);
-      entryText = `${zoneLow.toFixed(2)} - ${zoneHigh.toFixed(2)}`;
+      entryText = `${formatFxPrice(asset.symbol, zoneLow)} - ${formatFxPrice(asset.symbol, zoneHigh)}`;
 
       if (last.close > zoneHigh + atr14Value * 0.2) entryStatus = 'Triggered';
       else if (last.close >= zoneLow - atr14Value * 0.1) entryStatus = 'Near';
@@ -423,7 +370,7 @@ function buildIndexSignal(asset, candles) {
     } else {
       const zoneLow = Math.min(ema20, last.high);
       const zoneHigh = Math.max(ema20, last.high);
-      entryText = `${zoneLow.toFixed(2)} - ${zoneHigh.toFixed(2)}`;
+      entryText = `${formatFxPrice(asset.symbol, zoneLow)} - ${formatFxPrice(asset.symbol, zoneHigh)}`;
 
       if (last.close < zoneLow - atr14Value * 0.2) entryStatus = 'Triggered';
       else if (last.close <= zoneHigh + atr14Value * 0.1) entryStatus = 'Near';
@@ -433,9 +380,9 @@ function buildIndexSignal(asset, candles) {
 
   let reason = 'Range-bound conditions with no clean directional commitment.';
   if (state === 'Bullish') {
-    reason = `Bullish index structure with EMA alignment${breakoutUp ? ', breakout acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
+    reason = `Bullish forex structure with EMA alignment${breakoutUp ? ', breakout acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
   } else if (state === 'Bearish') {
-    reason = `Bearish index structure with EMA alignment${breakoutDown ? ', breakdown acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
+    reason = `Bearish forex structure with EMA alignment${breakoutDown ? ', breakdown acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
   }
 
   const signal = {
@@ -466,10 +413,7 @@ function eventAffectsSignal(signal, event) {
   const currency = event.currency || '';
   if (!currency) return false;
 
-  if (['NAS100', 'US500', 'US30'].includes(signal.symbol)) return currency === 'USD';
-  if (signal.symbol === 'UK100') return currency === 'GBP' || currency === 'USD';
-
-  return false;
+  return signal.symbol.includes(`${currency}/`) || signal.symbol.includes(`/${currency}`);
 }
 
 function applyNews(signals, newsEvents) {
@@ -478,7 +422,7 @@ function applyNews(signals, newsEvents) {
     if (!relevant.length) return signal;
 
     const next = relevant[0];
-    const mins = minutesUntil(next.event_time);
+    const mins = Math.round((new Date(next.event_time).getTime() - Date.now()) / 60000);
     const label =
       mins <= -1
         ? `${next.event_name} passed`
@@ -521,10 +465,8 @@ function markTopPick(signals, minScore) {
 
 async function buildSignalForAsset(asset, apiKey) {
   try {
-    const resolvedSymbol = await resolveTwelveSymbol(asset.symbol, apiKey);
-    await delay(250);
-    const candles = await fetchCandles(resolvedSymbol, '15min', apiKey);
-    return buildIndexSignal(asset, candles);
+    const candles = await fetchCandles(asset.symbol, '15min', apiKey);
+    return buildForexSignal(asset, candles);
   } catch (error) {
     const fallback = buildFallbackSignal(asset);
     return {
@@ -553,13 +495,13 @@ export async function handler() {
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('id, symbol, asset_class')
-      .in('symbol', INDEX_SYMBOLS)
+      .in('symbol', FOREX_SYMBOLS)
       .eq('is_active', true)
       .order('sort_order', { ascending: true });
 
     if (assetsError) throw assetsError;
     if (!assets || !assets.length) {
-      throw new Error('No active index assets found in assets table');
+      throw new Error('No active forex assets found in assets table');
     }
 
     const { data: settingsRows, error: settingsError } = await supabase
@@ -587,7 +529,7 @@ export async function handler() {
         status: 'running',
         assets_scanned: 0,
         engine_version: ENGINE_VERSION,
-        notes: 'Indices-only 15m scan started'
+        notes: 'Forex-only 15m scan started'
       }])
       .select('id')
       .limit(1);
@@ -599,7 +541,7 @@ export async function handler() {
     for (const asset of assets) {
       const signal = await buildSignalForAsset(asset, twelveDataApiKey);
       signals.push(signal);
-      await delay(500);
+      await delay(350);
     }
 
     let finalSignals = applyNews(signals, newsEvents || []);
@@ -643,7 +585,7 @@ export async function handler() {
     const { error: cleanupError } = await supabase
       .from('scanner_signals')
       .delete()
-      .in('symbol', INDEX_SYMBOLS)
+      .in('symbol', FOREX_SYMBOLS)
       .neq('timeframe', SCAN_TIMEFRAME);
 
     if (cleanupError) {
