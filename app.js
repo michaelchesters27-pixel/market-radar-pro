@@ -1,3 +1,4 @@
+
 // Build V10 - syntax fixed and fallback populated
 const fallbackSignals = [
 {
@@ -382,8 +383,6 @@ function expandSignalsAcrossTimeframes(baseSignals) {
   };
 
   return baseSignals.flatMap((item) => {
-    const baseTf = item.timeframe || '15m';
-
     return Object.entries(timeframeProfiles).map(([tf, profile]) => {
       const clone = { ...item };
       clone.timeframe = tf;
@@ -447,6 +446,7 @@ const marketRailTabs = document.getElementById('marketRailTabs');
 let lastUpdatedAt = null;
 let statusTickTimer = null;
 let autoRefreshTimer = null;
+let newsTickTimer = null;
 
 function startStatusTicker() {
   if (statusTickTimer) clearInterval(statusTickTimer);
@@ -466,6 +466,13 @@ function startAutoRefresh() {
     }
     await loadSignals();
   }, 60000);
+}
+
+function startNewsTicker() {
+  if (newsTickTimer) clearInterval(newsTickTimer);
+  newsTickTimer = setInterval(() => {
+    render();
+  }, 30000);
 }
 
 function formatRelative(ts) {
@@ -502,9 +509,31 @@ function getAssetClass(item) {
   return item.asset_class || item.type || 'unknown';
 }
 
-function displayUnderlying(item) {
-  if (!item || item.asset_class !== 'index' || !item.underlying_symbol) return '';
-  return ` <span class="underlying-chip">Ref ${item.underlying_symbol}</span>`;
+function getDisplayEntryText(item) {
+  return (item.strength_score || 0) >= 70 ? item.entry_text : 'None';
+}
+
+function getDisplayEntryStatus(item) {
+  return (item.strength_score || 0) >= 70 ? item.entry_status : ((item.strength_score || 0) >= 65 ? 'Waiting' : 'None');
+}
+
+function getDisplayNewsRisk(item) {
+  if (!item.news_event_name || !item.news_event_time) {
+    return item.news_risk;
+  }
+
+  const diffMs = new Date(item.news_event_time).getTime() - Date.now();
+  const mins = Math.round(diffMs / 60000);
+
+  if (mins <= -1) return `${item.news_event_name} passed`;
+  if (mins <= 0) return `${item.news_event_name} live`;
+  if (mins === 1) return `${item.news_event_name} in 1 min`;
+  if (mins < 60) return `${item.news_event_name} in ${mins} min`;
+
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  if (rem === 0) return `${item.news_event_name} in ${hours}h`;
+  return `${item.news_event_name} in ${hours}h ${rem}m`;
 }
 
 function getPreferredSelection(data) {
@@ -594,7 +623,7 @@ function getFilteredData() {
     if (state.asset !== 'all' && getAssetClass(item) !== state.asset) return false;
     if (state.timeframe !== 'all' && item.timeframe !== state.timeframe) return false;
     if (state.marketState !== 'all' && item.state !== state.marketState) return false;
-    if (state.validOnly && item.entry_status !== 'Valid') return false;
+    if (state.validOnly && getDisplayEntryStatus(item) !== 'Valid') return false;
     if (state.topPickOnly && !item.is_top_pick) return false;
     if (state.hideHighRisk && item.news_level === 'high') return false;
     if (state.search && !item.symbol.toLowerCase().includes(state.search.toLowerCase())) return false;
@@ -633,8 +662,9 @@ function renderTopPick(data) {
     return;
   }
 
-  const topEntryText = (top.strength_score || 0) >= 70 ? top.entry_text : 'None';
-  const topEntryStatus = (top.strength_score || 0) >= 70 ? top.entry_status : ((top.strength_score || 0) >= 65 ? 'Waiting' : 'None');
+  const topEntryText = getDisplayEntryText(top);
+  const topEntryStatus = getDisplayEntryStatus(top);
+  const topNewsRisk = getDisplayNewsRisk(top);
 
   topPickContent.innerHTML = `
     <div class="top-pick-symbol">
@@ -647,7 +677,7 @@ function renderTopPick(data) {
     <div class="top-pick-grid">
       <div class="metric-box"><p>Strength</p><p>${top.strength_score}/100</p></div>
       <div class="metric-box"><p>Volume</p><p>${top.volume_status}</p></div>
-      <div class="metric-box"><p>News Risk</p><p>${top.news_risk}</p></div>
+      <div class="metric-box"><p>News Risk</p><p>${topNewsRisk}</p></div>
       <div class="metric-box"><p>Suggested Entry</p><p>${topEntryText}</p></div>
       <div class="metric-box"><p>Entry Status</p><p>${topEntryStatus}</p></div>
       <div class="metric-box"><p>Bias</p><p>${top.bias_note}</p></div>
@@ -661,8 +691,9 @@ function renderTable(data) {
   state.selectedSymbol = selectedSymbol;
 
   scannerTableBody.innerHTML = data.map(item => {
-    const displayEntryText = (item.strength_score || 0) >= 70 ? item.entry_text : 'None';
-    const displayEntryStatus = (item.strength_score || 0) >= 70 ? item.entry_status : ((item.strength_score || 0) >= 65 ? 'Waiting' : 'None');
+    const displayEntryText = getDisplayEntryText(item);
+    const displayEntryStatus = getDisplayEntryStatus(item);
+    const displayNewsRisk = getDisplayNewsRisk(item);
 
     const statusClass = displayEntryStatus.toLowerCase();
     const newsClass = item.news_level;
@@ -684,7 +715,7 @@ function renderTable(data) {
         <td>${strengthMarkup(item.strength_score)}</td>
         <td>${item.volume_status}</td>
         <td>${item.bias_note}</td>
-        <td><span class="news-pill ${newsClass}">${item.news_risk}</span></td>
+        <td><span class="news-pill ${newsClass}">${displayNewsRisk}</span></td>
         <td>${displayEntryText}</td>
         <td><span class="status-pill ${statusClass}">${displayEntryStatus}</span></td>
         <td>${pickCell}</td>
@@ -795,4 +826,5 @@ bindFilters();
 bindMarketRail();
 startStatusTicker();
 startAutoRefresh();
+startNewsTicker();
 loadSignals(true);
