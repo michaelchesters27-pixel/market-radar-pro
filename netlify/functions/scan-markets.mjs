@@ -1,51 +1,62 @@
 import { createClient } from '@supabase/supabase-js';
 
-const ENGINE_VERSION = 'market-radar-pro-v18-forex-real';
-const timeframes = ['15m', '1h', '4h'];
+const ENGINE_VERSION = 'market-radar-pro-v19-indices-15m';
+const SCAN_TIMEFRAME = '15m';
+const INDEX_SYMBOLS = ['NAS100', 'US500', 'UK100', 'US30'];
 
-const FOREX_SYMBOLS = new Set([
-  'EUR/USD',
-  'GBP/USD',
-  'USD/JPY',
-  'USD/CHF',
-  'AUD/USD',
-  'NZD/USD',
-  'USD/CAD',
-  'EUR/JPY',
-  'GBP/JPY',
-  'EUR/GBP',
-  'EUR/CHF',
-  'GBP/CHF',
-  'AUD/JPY',
-  'NZD/JPY'
-]);
-
-const fallbackTemplates = {
-  'EUR/USD': { state: 'Bullish', strength_score: 79, confidence_score: 76, confidence_level: 'High', volume_status: 'Rising', bias_note: 'USD Weak', news_risk: 'No major news', news_level: 'medium', entry_text: '1.0842 - 1.0848', entry_status: 'Near', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'GBP/USD': { state: 'Consolidating', strength_score: 44, confidence_score: 41, confidence_level: 'Low', volume_status: 'Quiet', bias_note: 'Mixed Sentiment', news_risk: 'No major news', news_level: 'high', entry_text: 'None', entry_status: 'Waiting', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'USD/JPY': { state: 'Bearish', strength_score: 74, confidence_score: 72, confidence_level: 'Medium', volume_status: 'Selling Pressure', bias_note: 'Yen Strength', news_risk: 'No major news', news_level: 'low', entry_text: '154.18 - 154.24', entry_status: 'Valid', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'USD/CHF': { state: 'Consolidating', strength_score: 47, confidence_score: 45, confidence_level: 'Low', volume_status: 'Mixed', bias_note: 'No Clear Bias', news_risk: 'No major news', news_level: 'low', entry_text: 'None', entry_status: 'Waiting', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'AUD/USD': { state: 'Bullish', strength_score: 68, confidence_score: 65, confidence_level: 'Medium', volume_status: 'Confirmed', bias_note: 'Commodity Support', news_risk: 'No major news', news_level: 'low', entry_text: '0.6580 - 0.6588', entry_status: 'Triggered', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'NZD/USD': { state: 'Bullish', strength_score: 66, confidence_score: 64, confidence_level: 'Medium', volume_status: 'Rising', bias_note: 'Risk-On Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: '0.6122 - 0.6130', entry_status: 'Valid', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'USD/CAD': { state: 'Bearish', strength_score: 71, confidence_score: 69, confidence_level: 'Medium', volume_status: 'Confirmed', bias_note: 'CAD Strength', news_risk: 'No major news', news_level: 'low', entry_text: '1.3564 - 1.3572', entry_status: 'Valid', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'EUR/JPY': { state: 'Bullish', strength_score: 76, confidence_score: 73, confidence_level: 'High', volume_status: 'Buying Pressure', bias_note: 'Euro Strength', news_risk: 'No major news', news_level: 'low', entry_text: '168.42 - 168.58', entry_status: 'Valid', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'GBP/JPY': { state: 'Bearish', strength_score: 72, confidence_score: 69, confidence_level: 'Medium', volume_status: 'Selling Pressure', bias_note: 'Pound Weakness', news_risk: 'No major news', news_level: 'low', entry_text: '201.14 - 201.32', entry_status: 'Near', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'EUR/GBP': { state: 'Bullish', strength_score: 64, confidence_score: 61, confidence_level: 'Medium', volume_status: 'Weak', bias_note: 'Euro Strength', news_risk: 'No major news', news_level: 'low', entry_text: '0.8540 - 0.8548', entry_status: 'Valid', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'EUR/CHF': { state: 'Consolidating', strength_score: 43, confidence_score: 40, confidence_level: 'Low', volume_status: 'Quiet', bias_note: 'Mixed Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: 'None', entry_status: 'Waiting', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'GBP/CHF': { state: 'Bearish', strength_score: 65, confidence_score: 62, confidence_level: 'Medium', volume_status: 'Fading', bias_note: 'Pound Weakness', news_risk: 'No major news', news_level: 'low', entry_text: '1.1268 - 1.1280', entry_status: 'Near', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'AUD/JPY': { state: 'Bullish', strength_score: 73, confidence_score: 70, confidence_level: 'Medium', volume_status: 'Confirmed', bias_note: 'Risk-On Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: '101.42 - 101.58', entry_status: 'Valid', reason: 'Fallback template used because live forex candles were unavailable.' },
-  'NZD/JPY': { state: 'Bullish', strength_score: 69, confidence_score: 66, confidence_level: 'Medium', volume_status: 'Rising', bias_note: 'Risk-On Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: '93.18 - 93.30', entry_status: 'Valid', reason: 'Fallback template used because live forex candles were unavailable.' },
-
-  'XAU/USD': { state: 'Bullish', strength_score: 88, confidence_score: 86, confidence_level: 'High', volume_status: 'Confirmed', bias_note: 'Weak USD / Metals Bid', news_risk: 'No major news', news_level: 'low', entry_text: '3228 - 3232', entry_status: 'Valid', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'XAG/USD': { state: 'Bullish', strength_score: 72, confidence_score: 70, confidence_level: 'Medium', volume_status: 'Rising', bias_note: 'Metals Bid', news_risk: 'No major news', news_level: 'low', entry_text: '29.64 - 29.71', entry_status: 'Valid', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'BTC/USD': { state: 'Consolidating', strength_score: 39, confidence_score: 37, confidence_level: 'Low', volume_status: 'Mixed', bias_note: 'Mixed Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: 'None', entry_status: 'Waiting', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'ETH/USD': { state: 'Bearish', strength_score: 69, confidence_score: 66, confidence_level: 'Medium', volume_status: 'Selling Pressure', bias_note: 'Risk-Off Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: '3024 - 3038', entry_status: 'Valid', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'SOL/USD': { state: 'Bullish', strength_score: 75, confidence_score: 73, confidence_level: 'High', volume_status: 'Buying Pressure', bias_note: 'Risk-On Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: '142.6 - 144.0', entry_status: 'Valid', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'XRP/USD': { state: 'Consolidating', strength_score: 46, confidence_score: 44, confidence_level: 'Low', volume_status: 'Quiet', bias_note: 'No Clear Bias', news_risk: 'No major news', news_level: 'low', entry_text: 'None', entry_status: 'Waiting', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'US500': { state: 'Bullish', strength_score: 82, confidence_score: 80, confidence_level: 'High', volume_status: 'Confirmed', bias_note: 'Risk-On Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: '5250 - 5260', entry_status: 'Valid', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'NAS100': { state: 'Bullish', strength_score: 85, confidence_score: 83, confidence_level: 'High', volume_status: 'Buying Pressure', bias_note: 'Tech Strength', news_risk: 'No major news', news_level: 'low', entry_text: '18200 - 18250', entry_status: 'Valid', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'US30': { state: 'Consolidating', strength_score: 55, confidence_score: 52, confidence_level: 'Low', volume_status: 'Mixed', bias_note: 'Mixed Sentiment', news_risk: 'No major news', news_level: 'low', entry_text: 'None', entry_status: 'Waiting', reason: 'Fallback template while forex-only real logic is being phased in.' },
-  'UK100': { state: 'Bearish', strength_score: 70, confidence_score: 67, confidence_level: 'Medium', volume_status: 'Selling Pressure', bias_note: 'UK Weakness', news_risk: 'No major news', news_level: 'low', entry_text: '7700 - 7720', entry_status: 'Near', reason: 'Fallback template while forex-only real logic is being phased in.' }
+const FALLBACKS = {
+  NAS100: {
+    state: 'Bullish',
+    strength_score: 85,
+    confidence_score: 83,
+    confidence_level: 'High',
+    volume_status: 'Buying Pressure',
+    bias_note: 'Tech Strength',
+    news_risk: 'No major news',
+    news_level: 'low',
+    entry_text: '18200 - 18250',
+    entry_status: 'Valid',
+    reason: 'Fallback template used because live index candles were unavailable.'
+  },
+  US500: {
+    state: 'Bullish',
+    strength_score: 82,
+    confidence_score: 80,
+    confidence_level: 'High',
+    volume_status: 'Confirmed',
+    bias_note: 'Risk-On Sentiment',
+    news_risk: 'No major news',
+    news_level: 'low',
+    entry_text: '5250 - 5260',
+    entry_status: 'Valid',
+    reason: 'Fallback template used because live index candles were unavailable.'
+  },
+  UK100: {
+    state: 'Bearish',
+    strength_score: 70,
+    confidence_score: 67,
+    confidence_level: 'Medium',
+    volume_status: 'Selling Pressure',
+    bias_note: 'UK Weakness',
+    news_risk: 'No major news',
+    news_level: 'low',
+    entry_text: '7700 - 7720',
+    entry_status: 'Near',
+    reason: 'Fallback template used because live index candles were unavailable.'
+  },
+  US30: {
+    state: 'Consolidating',
+    strength_score: 55,
+    confidence_score: 52,
+    confidence_level: 'Low',
+    volume_status: 'Mixed',
+    bias_note: 'Mixed Sentiment',
+    news_risk: 'No major news',
+    news_level: 'low',
+    entry_text: 'None',
+    entry_status: 'Waiting',
+    reason: 'Fallback template used because live index candles were unavailable.'
+  }
 };
 
 function json(statusCode, payload) {
@@ -60,22 +71,8 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function minutesUntil(iso) {
-  return Math.round((new Date(iso).getTime() - Date.now()) / 60000);
-}
-
-function getLondonHour(date = new Date()) {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
-    hour: '2-digit',
-    hour12: false
-  });
-  return Number(fmt.format(date));
-}
-
-function formatFxPrice(symbol, value) {
-  const decimals = symbol.includes('JPY') ? 3 : 4;
-  return Number(value).toFixed(decimals);
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function ema(values, period) {
@@ -85,6 +82,18 @@ function ema(values, period) {
     result = values[i] * k + result * (1 - k);
   }
   return result;
+}
+
+function averageBody(candles, length = 10) {
+  const sample = candles.slice(-length);
+  if (!sample.length) return 0;
+  return sample.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0) / sample.length;
+}
+
+function averageRange(candles, length = 14) {
+  const sample = candles.slice(-length);
+  if (!sample.length) return 0;
+  return sample.reduce((sum, c) => sum + (c.high - c.low), 0) / sample.length;
 }
 
 function atr(candles, period = 14) {
@@ -105,18 +114,6 @@ function atr(candles, period = 14) {
   return sample.reduce((a, b) => a + b, 0) / sample.length;
 }
 
-function averageBody(candles, length = 10) {
-  const sample = candles.slice(-length);
-  if (!sample.length) return 0;
-  return sample.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0) / sample.length;
-}
-
-function averageRange(candles, length = 14) {
-  const sample = candles.slice(-length);
-  if (!sample.length) return 0;
-  return sample.reduce((sum, c) => sum + (c.high - c.low), 0) / sample.length;
-}
-
 function parseCandles(payload) {
   const values = Array.isArray(payload?.values) ? payload.values : [];
   return values
@@ -127,7 +124,12 @@ function parseCandles(payload) {
       low: Number(v.low),
       close: Number(v.close)
     }))
-    .filter(v => Number.isFinite(v.open) && Number.isFinite(v.high) && Number.isFinite(v.low) && Number.isFinite(v.close))
+    .filter(v =>
+      Number.isFinite(v.open) &&
+      Number.isFinite(v.high) &&
+      Number.isFinite(v.low) &&
+      Number.isFinite(v.close)
+    )
     .reverse();
 }
 
@@ -148,46 +150,55 @@ async function fetchCandles(symbol, interval, apiKey) {
 
   const candles = parseCandles(data);
   if (candles.length < 60) {
-    throw new Error(`Not enough candle data for ${symbol} ${interval}`);
+    throw new Error(`Not enough candles for ${symbol} ${interval}`);
   }
 
   return candles;
 }
 
-function getBiasNote(symbol, state) {
-  const [base, quote] = symbol.split('/');
+function getLondonHour(date = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    hour: '2-digit',
+    hour12: false
+  });
+  return Number(fmt.format(date));
+}
 
+function getBiasNote(symbol, state) {
   if (state === 'Bullish') {
-    if (quote === 'USD') return 'USD Weak';
-    if (base === 'USD') return `${quote} Weak`;
-    return `${base} Strength`;
+    if (symbol === 'NAS100') return 'Tech Strength';
+    if (symbol === 'US500') return 'Risk-On Sentiment';
+    if (symbol === 'US30') return 'Industrial Bid';
+    if (symbol === 'UK100') return 'UK Equity Strength';
   }
 
   if (state === 'Bearish') {
-    if (quote === 'USD') return `${base} Weak`;
-    if (base === 'USD') return 'USD Strength';
-    return `${quote} Strength`;
+    if (symbol === 'NAS100') return 'Tech Weakness';
+    if (symbol === 'US500') return 'Risk-Off Sentiment';
+    if (symbol === 'US30') return 'Industrial Weakness';
+    if (symbol === 'UK100') return 'UK Weakness';
   }
 
   return 'Mixed Sentiment';
 }
 
-function getVolumeStatus(state, momentumRatio, atrRatio) {
+function getVolumeStatus(state, bodyRatio, rangeRatio) {
   if (state === 'Bullish') {
-    if (momentumRatio >= 1.3) return 'Buying Pressure';
-    if (atrRatio >= 1.05) return 'Confirmed';
-    if (momentumRatio >= 1.0) return 'Rising';
+    if (bodyRatio >= 1.3) return 'Buying Pressure';
+    if (rangeRatio >= 1.05) return 'Confirmed';
+    if (bodyRatio >= 1.0) return 'Rising';
     return 'Weak';
   }
 
   if (state === 'Bearish') {
-    if (momentumRatio >= 1.3) return 'Selling Pressure';
-    if (atrRatio >= 1.05) return 'Confirmed';
-    if (momentumRatio >= 1.0) return 'Fading';
+    if (bodyRatio >= 1.3) return 'Selling Pressure';
+    if (rangeRatio >= 1.05) return 'Confirmed';
+    if (bodyRatio >= 1.0) return 'Fading';
     return 'Weak';
   }
 
-  if (atrRatio < 0.9) return 'Quiet';
+  if (rangeRatio < 0.9) return 'Quiet';
   return 'Mixed';
 }
 
@@ -198,7 +209,9 @@ function getConfidenceLevel(score) {
 }
 
 function applyEntryGate(signal) {
-  if ((signal.strength_score || 0) >= 70) return signal;
+  if ((signal.strength_score || 0) >= 70) {
+    return signal;
+  }
 
   if ((signal.strength_score || 0) >= 65) {
     return {
@@ -217,14 +230,14 @@ function applyEntryGate(signal) {
   };
 }
 
-function buildFallbackSignal(asset, timeframe) {
-  const base = fallbackTemplates[asset.symbol] || {
+function buildFallbackSignal(asset) {
+  const base = FALLBACKS[asset.symbol] || {
     state: 'Consolidating',
     strength_score: 50,
     confidence_score: 50,
     confidence_level: 'Low',
     volume_status: 'Mixed',
-    bias_note: 'No Clear Bias',
+    bias_note: 'Mixed Sentiment',
     news_risk: 'No major news',
     news_level: 'low',
     entry_text: 'None',
@@ -232,16 +245,14 @@ function buildFallbackSignal(asset, timeframe) {
     reason: 'Default fallback logic.'
   };
 
-  const tfAdjust = timeframe === '15m' ? 0 : timeframe === '1h' ? -4 : -8;
-
-  let signal = {
+  return applyEntryGate({
     asset_id: asset.id,
     symbol: asset.symbol,
-    timeframe,
+    timeframe: SCAN_TIMEFRAME,
     state: base.state,
-    strength_score: clamp(base.strength_score + tfAdjust, 38, 96),
-    confidence_score: clamp(base.confidence_score + tfAdjust, 30, 95),
-    confidence_level: timeframe === '15m' ? base.confidence_level : timeframe === '1h' ? 'Medium' : 'Low',
+    strength_score: base.strength_score,
+    confidence_score: base.confidence_score,
+    confidence_level: base.confidence_level,
     volume_status: base.volume_status,
     bias_note: base.bias_note,
     news_risk: base.news_risk,
@@ -250,40 +261,26 @@ function buildFallbackSignal(asset, timeframe) {
     entry_status: base.entry_status,
     reason: base.reason,
     is_top_pick: false
-  };
-
-  if (timeframe === '1h') {
-    if (signal.entry_status === 'Triggered') signal.entry_status = 'Waiting';
-    if (signal.entry_text !== 'None') signal.entry_text = 'Watch 15m for confirmation';
-  }
-
-  if (timeframe === '4h') {
-    signal.entry_text = 'None';
-    signal.entry_status = 'None';
-  }
-
-  return applyEntryGate(signal);
+  });
 }
 
-function buildForexSignal(asset, timeframe, candles15m, candles1h) {
-  const candles = timeframe === '15m' ? candles15m : candles1h;
+function buildIndexSignal(asset, candles) {
   const closes = candles.map(c => c.close);
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
 
   const last = candles[candles.length - 1];
   const prev = candles[candles.length - 2];
+
   const ema20 = ema(closes.slice(-30), 20);
   const ema50 = ema(closes.slice(-60), 50);
-  const lastBody = Math.abs(last.close - last.open);
-  const avgBody10 = averageBody(candles, 10) || lastBody || 0.0001;
-  const bodyRatio = lastBody / avgBody10;
-  const atr14Value = atr(candles, 14) || Math.abs(last.high - last.low) || 0.0001;
+  const atr14Value = atr(candles, 14) || Math.abs(last.high - last.low) || 1;
   const avgRange14 = averageRange(candles, 14) || atr14Value;
-  const atrRatio = atr14Value / (avgRange14 || 0.0001);
+  const avgBody10 = averageBody(candles, 10) || Math.abs(last.close - last.open) || 1;
+  const lastBody = Math.abs(last.close - last.open);
+  const bodyRatio = lastBody / avgBody10;
+  const rangeRatio = atr14Value / avgRange14;
 
-  const prev20High = Math.max(...highs.slice(-21, -1));
-  const prev20Low = Math.min(...lows.slice(-21, -1));
   const prev8High = Math.max(...highs.slice(-9, -1));
   const prev8Low = Math.min(...lows.slice(-9, -1));
 
@@ -291,8 +288,8 @@ function buildForexSignal(asset, timeframe, candles15m, candles1h) {
   const bearishAlignment = last.close < ema20 && ema20 < ema50;
   const breakoutUp = last.close > prev8High;
   const breakoutDown = last.close < prev8Low;
-  const expansionUp = (last.close > last.open) && bodyRatio >= 1.15;
-  const expansionDown = (last.close < last.open) && bodyRatio >= 1.15;
+  const expansionUp = last.close > last.open && bodyRatio >= 1.1;
+  const expansionDown = last.close < last.open && bodyRatio >= 1.1;
 
   let state = 'Consolidating';
 
@@ -310,14 +307,11 @@ function buildForexSignal(asset, timeframe, candles15m, candles1h) {
     last.high < prev.high
   ].filter(Boolean).length;
 
-  if (bullVotes >= 3 && bullVotes > bearVotes) state = 'Bullish';
-  else if (bearVotes >= 3 && bearVotes > bullVotes) state = 'Bearish';
-
-  const h1Closes = candles1h.map(c => c.close);
-  const h1Ema20 = ema(h1Closes.slice(-30), 20);
-  const h1Ema50 = ema(h1Closes.slice(-60), 50);
-  const higherTfBull = candles1h[candles1h.length - 1].close > h1Ema20 && h1Ema20 > h1Ema50;
-  const higherTfBear = candles1h[candles1h.length - 1].close < h1Ema20 && h1Ema20 < h1Ema50;
+  if (bullVotes >= 3 && bullVotes > bearVotes) {
+    state = 'Bullish';
+  } else if (bearVotes >= 3 && bearVotes > bullVotes) {
+    state = 'Bearish';
+  }
 
   let trendPoints = 0;
   if (state === 'Bullish' || state === 'Bearish') trendPoints += 24;
@@ -329,90 +323,67 @@ function buildForexSignal(asset, timeframe, candles15m, candles1h) {
 
   let momentumPoints = 0;
   if (bodyRatio >= 1.4) momentumPoints += 18;
-  else if (bodyRatio >= 1.1) momentumPoints += 12;
-  else if (bodyRatio >= 0.9) momentumPoints += 7;
+  else if (bodyRatio >= 1.15) momentumPoints += 12;
+  else if (bodyRatio >= 0.95) momentumPoints += 7;
   else momentumPoints += 3;
 
   let volatilityPoints = 0;
-  if (atrRatio >= 1.15) volatilityPoints += 12;
-  else if (atrRatio >= 1.0) volatilityPoints += 8;
+  if (rangeRatio >= 1.15) volatilityPoints += 12;
+  else if (rangeRatio >= 1.0) volatilityPoints += 8;
   else volatilityPoints += 4;
-
-  let higherTfPoints = 0;
-  if ((state === 'Bullish' && higherTfBull) || (state === 'Bearish' && higherTfBear)) higherTfPoints += 12;
-  else if (state !== 'Consolidating') higherTfPoints += 5;
 
   let sessionPoints = 0;
   const londonHour = getLondonHour();
-  if (timeframe === '15m' && londonHour >= 7 && londonHour <= 16) sessionPoints += 8;
-  else if (timeframe === '1h') sessionPoints += 4;
-  else sessionPoints += 2;
+  if (londonHour >= 7 && londonHour <= 16) sessionPoints += 8;
+  else sessionPoints += 4;
 
-  let strength = trendPoints + structurePoints + momentumPoints + volatilityPoints + higherTfPoints + sessionPoints;
+  let strength = trendPoints + structurePoints + momentumPoints + volatilityPoints + sessionPoints;
   if (state === 'Consolidating') strength = Math.min(strength, 58);
   strength = clamp(Math.round(strength), 35, 95);
 
   const confidenceScore = clamp(
-    Math.round((trendPoints + structurePoints + higherTfPoints + momentumPoints) / 0.7),
+    Math.round((trendPoints + structurePoints + momentumPoints + sessionPoints) / 0.65),
     35,
     95
   );
 
-  const volumeStatus = getVolumeStatus(state, bodyRatio, atrRatio);
+  const volumeStatus = getVolumeStatus(state, bodyRatio, rangeRatio);
   const biasNote = getBiasNote(asset.symbol, state);
 
   let entryText = 'None';
   let entryStatus = 'None';
 
-  if (timeframe === '15m' && state !== 'Consolidating') {
+  if (state !== 'Consolidating') {
     if (state === 'Bullish') {
       const zoneLow = Math.min(ema20, last.low);
       const zoneHigh = Math.max(ema20, last.low);
-      entryText = `${formatFxPrice(asset.symbol, zoneLow)} - ${formatFxPrice(asset.symbol, zoneHigh)}`;
+      entryText = `${zoneLow.toFixed(2)} - ${zoneHigh.toFixed(2)}`;
 
-      if (last.close > zoneHigh + atr14Value * 0.25) entryStatus = 'Triggered';
-      else if (last.close >= zoneLow - atr14Value * 0.15) entryStatus = 'Near';
+      if (last.close > zoneHigh + atr14Value * 0.2) entryStatus = 'Triggered';
+      else if (last.close >= zoneLow - atr14Value * 0.1) entryStatus = 'Near';
       else entryStatus = 'Valid';
     } else {
       const zoneLow = Math.min(ema20, last.high);
       const zoneHigh = Math.max(ema20, last.high);
-      entryText = `${formatFxPrice(asset.symbol, zoneLow)} - ${formatFxPrice(asset.symbol, zoneHigh)}`;
+      entryText = `${zoneLow.toFixed(2)} - ${zoneHigh.toFixed(2)}`;
 
-      if (last.close < zoneLow - atr14Value * 0.25) entryStatus = 'Triggered';
-      else if (last.close <= zoneHigh + atr14Value * 0.15) entryStatus = 'Near';
+      if (last.close < zoneLow - atr14Value * 0.2) entryStatus = 'Triggered';
+      else if (last.close <= zoneHigh + atr14Value * 0.1) entryStatus = 'Near';
       else entryStatus = 'Valid';
     }
   }
 
-  if (timeframe === '1h') {
-    entryText = state === 'Consolidating' ? 'None' : 'Watch 15m for confirmation';
-    entryStatus = state === 'Consolidating' ? 'Waiting' : 'Waiting';
-  }
-
-  if (timeframe === '4h') {
-    entryText = 'None';
-    entryStatus = 'None';
-  }
-
   let reason = 'Range-bound conditions with no clean directional commitment.';
   if (state === 'Bullish') {
-    reason = `Bullish structure with EMA alignment${breakoutUp ? ', breakout acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
+    reason = `Bullish index structure with EMA alignment${breakoutUp ? ', breakout acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
   } else if (state === 'Bearish') {
-    reason = `Bearish structure with EMA alignment${breakoutDown ? ', breakdown acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
-  }
-
-  if (timeframe === '1h') {
-    reason += ' Higher timeframe context only; refine entry on 15m.';
-  }
-
-  if (timeframe === '4h') {
-    reason += ' 4H view is directional context only.';
+    reason = `Bearish index structure with EMA alignment${breakoutDown ? ', breakdown acceptance' : ''} and ${volumeStatus.toLowerCase()}.`;
   }
 
   const signal = {
     asset_id: asset.id,
     symbol: asset.symbol,
-    timeframe,
+    timeframe: SCAN_TIMEFRAME,
     state,
     strength_score: strength,
     confidence_score: confidenceScore,
@@ -431,17 +402,14 @@ function buildForexSignal(asset, timeframe, candles15m, candles1h) {
 }
 
 function eventAffectsSignal(signal, event) {
-  const symbol = signal.symbol;
   const affectedAssets = Array.isArray(event.affected_assets) ? event.affected_assets : [];
-  if (affectedAssets.includes(symbol)) return true;
+  if (affectedAssets.includes(signal.symbol)) return true;
 
   const currency = event.currency || '';
   if (!currency) return false;
 
-  if (symbol.includes(`${currency}/`) || symbol.includes(`/${currency}`)) return true;
-  if (symbol.startsWith('XAU/') || symbol.startsWith('XAG/')) return currency === 'USD';
-  if (['US500', 'NAS100', 'US30'].includes(symbol)) return currency === 'USD';
-  if (symbol === 'UK100') return currency === 'GBP' || currency === 'USD';
+  if (['NAS100', 'US500', 'US30'].includes(signal.symbol)) return currency === 'USD';
+  if (signal.symbol === 'UK100') return currency === 'GBP' || currency === 'USD';
 
   return false;
 }
@@ -453,10 +421,15 @@ function applyNews(signals, newsEvents) {
 
     const next = relevant[0];
     const mins = minutesUntil(next.event_time);
-    const label = mins <= -1 ? `${next.event_name} passed` : mins <= 0 ? `${next.event_name} live` : `${next.event_name} in ${mins} min`;
+    const label =
+      mins <= -1
+        ? `${next.event_name} passed`
+        : mins <= 0
+          ? `${next.event_name} live`
+          : `${next.event_name} in ${mins} min`;
 
     let entryStatus = signal.entry_status;
-    if (next.impact_level === 'high' && mins <= 30 && mins >= -1 && signal.timeframe === '15m') {
+    if (next.impact_level === 'high' && mins <= 30 && mins >= -1) {
       entryStatus = 'Waiting';
     }
 
@@ -470,13 +443,13 @@ function applyNews(signals, newsEvents) {
 }
 
 function markTopPick(signals, minScore) {
-  signals.forEach((row) => {
+  signals.forEach(row => {
     row.is_top_pick = false;
   });
 
   const pick = signals
-    .filter((row) =>
-      row.timeframe === '15m' &&
+    .filter(row =>
+      row.timeframe === SCAN_TIMEFRAME &&
       row.entry_status === 'Valid' &&
       row.news_level !== 'high' &&
       row.state !== 'Consolidating' &&
@@ -488,39 +461,25 @@ function markTopPick(signals, minScore) {
   return pick?.symbol || null;
 }
 
-async function buildSignalsForAsset(asset, apiKey) {
-  if (!FOREX_SYMBOLS.has(asset.symbol)) {
-    return timeframes.map(tf => buildFallbackSignal(asset, tf));
-  }
-
+async function buildSignalForAsset(asset, apiKey) {
   try {
-    const [candles15m, candles1h] = await Promise.all([
-      fetchCandles(asset.symbol, '15min', apiKey),
-      fetchCandles(asset.symbol, '1h', apiKey)
-    ]);
-
-    return [
-      buildForexSignal(asset, '15m', candles15m, candles1h),
-      buildForexSignal(asset, '1h', candles15m, candles1h),
-      buildForexSignal(asset, '4h', candles15m, candles1h)
-    ];
+    const candles = await fetchCandles(asset.symbol, '15min', apiKey);
+    return buildIndexSignal(asset, candles);
   } catch (error) {
-    return timeframes.map(tf => {
-      const fallback = buildFallbackSignal(asset, tf);
-      return {
-        ...fallback,
-        reason: `${fallback.reason} ${String(error.message || error)}`
-      };
-    });
+    const fallback = buildFallbackSignal(asset);
+    return {
+      ...fallback,
+      reason: `${fallback.reason} ${String(error.message || error)}`
+    };
   }
 }
 
 export async function handler() {
-  const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const twelveDataApiKey = process.env.TWELVE_DATA_API_KEY;
 
-  if (!url || !serviceKey) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return json(500, { ok: false, error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' });
   }
 
@@ -529,20 +488,26 @@ export async function handler() {
   }
 
   try {
-    const supabase = createClient(url, serviceKey);
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const { data: assets, error: assetsError } = await supabase
       .from('assets')
       .select('id, symbol, asset_class')
+      .in('symbol', INDEX_SYMBOLS)
       .eq('is_active', true)
       .order('sort_order', { ascending: true });
+
     if (assetsError) throw assetsError;
+    if (!assets || !assets.length) {
+      throw new Error('No active index assets found in assets table');
+    }
 
     const { data: settingsRows, error: settingsError } = await supabase
       .from('scanner_settings')
       .select('*')
       .eq('is_active', true)
       .limit(1);
+
     if (settingsError) throw settingsError;
     const settings = settingsRows?.[0] || { top_pick_min_score: 75 };
 
@@ -553,6 +518,7 @@ export async function handler() {
       .gte('event_time', new Date(Date.now() - 5 * 60 * 1000).toISOString())
       .lte('event_time', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString())
       .order('event_time', { ascending: true });
+
     if (newsError) throw newsError;
 
     const { data: runRows, error: runStartError } = await supabase
@@ -561,25 +527,29 @@ export async function handler() {
         status: 'running',
         assets_scanned: 0,
         engine_version: ENGINE_VERSION,
-        notes: 'Scheduled/manual scan started'
+        notes: 'Indices-only 15m scan started'
       }])
       .select('id')
       .limit(1);
+
     if (runStartError) throw runStartError;
     const runId = runRows[0].id;
 
-    const signalChunks = [];
+    const signals = [];
     for (const asset of assets) {
-      const chunk = await buildSignalsForAsset(asset, twelveDataApiKey);
-      signalChunks.push(chunk);
+      const signal = await buildSignalForAsset(asset, twelveDataApiKey);
+      signals.push(signal);
+      await delay(350);
     }
 
-    let signals = signalChunks.flat();
-    signals = applyNews(signals, newsEvents || []);
-    const topPickSymbol = markTopPick(signals, settings.top_pick_min_score || 75);
-    signals = signals.map((row) => ({ ...row, scan_run_id: runId }));
+    let finalSignals = applyNews(signals, newsEvents || []);
+    const topPickSymbol = markTopPick(finalSignals, settings.top_pick_min_score || 75);
+    finalSignals = finalSignals.map(row => ({
+      ...row,
+      scan_run_id: runId
+    }));
 
-    const upsertRows = signals.map((row) => ({
+    const upsertRows = finalSignals.map(row => ({
       asset_id: row.asset_id,
       symbol: row.symbol,
       timeframe: row.timeframe,
@@ -601,12 +571,25 @@ export async function handler() {
     const { error: upsertError } = await supabase
       .from('scanner_signals')
       .upsert(upsertRows, { onConflict: 'asset_id,timeframe' });
+
     if (upsertError) throw upsertError;
 
     const { error: historyError } = await supabase
       .from('signal_history')
-      .insert(upsertRows.map((row) => ({ ...row })));
+      .insert(upsertRows.map(row => ({ ...row })));
+
     if (historyError) throw historyError;
+
+    const { error: cleanupError } = await supabase
+      .from('scanner_signals')
+      .delete()
+      .in('symbol', INDEX_SYMBOLS)
+      .neq('timeframe', SCAN_TIMEFRAME);
+
+    if (cleanupError) {
+      // not fatal
+      console.warn('Cleanup warning:', cleanupError.message);
+    }
 
     const { error: runEndError } = await supabase
       .from('scanner_runs')
@@ -617,17 +600,18 @@ export async function handler() {
         completed_at: new Date().toISOString()
       })
       .eq('id', runId);
+
     if (runEndError) throw runEndError;
 
     return json(200, {
       ok: true,
       mode: 'supabase',
-      run_id: runId,
+      engine_version: ENGINE_VERSION,
       scanned_assets: assets.length,
+      timeframe: SCAN_TIMEFRAME,
       signal_rows: upsertRows.length,
       top_pick_symbol: topPickSymbol,
-      updated_at: new Date().toISOString(),
-      real_forex_logic: true
+      updated_at: new Date().toISOString()
     });
   } catch (error) {
     try {
