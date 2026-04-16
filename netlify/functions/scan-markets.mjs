@@ -1,8 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
-const ENGINE_VERSION = 'market-radar-pro-v19-indices-15m';
+const ENGINE_VERSION = 'market-radar-pro-v20-indices-15m-search';
 const SCAN_TIMEFRAME = '15m';
 const INDEX_SYMBOLS = ['NAS100', 'US500', 'UK100', 'US30'];
+
+const SEARCH_HINTS = {
+  NAS100: ['Nasdaq 100', 'NDX', 'Nasdaq-100'],
+  US500: ['S&P 500', 'SPX', 'S&P500'],
+  UK100: ['FTSE 100', 'FTSE'],
+  US30: ['Dow Jones', 'DJI', 'Dow Jones Industrial Average']
+};
 
 const FALLBACKS = {
   NAS100: {
@@ -133,27 +140,78 @@ function parseCandles(payload) {
     .reverse();
 }
 
-async function fetchCandles(symbol, interval, apiKey) {
+async function twelveGet(url) {
+  const res = await fetch(url, { method: 'GET' });
+  const data = await res.json();
+  if (!res.ok || data.status === 'error') {
+    throw new Error(data.message || 'Twelve Data request failed');
+  }
+  return data;
+}
+
+function scoreSearchMatch(result, appSymbol) {
+  const hay = `${result.symbol || ''} ${result.instrument_name || ''} ${result.exchange || ''} ${result.country || ''}`.toLowerCase();
+  const hints = (SEARCH_HINTS[appSymbol] || []).map(x => x.toLowerCase());
+
+  let score = 0;
+
+  for (const hint of hints) {
+    if (hay.includes(hint)) score += 5;
+  }
+
+  if ((result.instrument_type || '').toLowerCase().includes('index')) score += 8;
+  if ((result.exchange || '').toLowerCase().includes('index')) score += 2;
+  if ((result.country || '').toLowerCase().includes('united states') && appSymbol !== 'UK100') score += 2;
+  if ((result.country || '').toLowerCase().includes('united kingdom') && appSymbol === 'UK100') score += 3;
+
+  return score;
+}
+
+async function resolveTwelveSymbol(appSymbol, apiKey) {
+  const url = new URL('https://api.twelvedata.com/symbol_search');
+  url.searchParams.set('symbol', SEARCH_HINTS[appSymbol]?.[0] || appSymbol);
+  url.searchParams.set('apikey', apiKey);
+
+  const data = await twelveGet(url.toString());
+  const items = Array.isArray(data.data) ? data.data : [];
+
+  if (!items.length) {
+    throw new Error(`No symbol search results for ${appSymbol}`);
+  }
+
+  const ranked = items
+    .map(item => ({ ...item, _score: scoreSearchMatch(item, appSymbol) }))
+    .sort((a, b) => b._score - a._score);
+
+  const best = ranked[0];
+
+  if (!best?.symbol) {
+    throw new Error(`Could not resolve Twelve Data symbol for ${appSymbol}`);
+  }
+
+  return best.symbol;
+}
+
+async function fetchCandles(resolvedSymbol, interval, apiKey) {
   const url = new URL('https://api.twelvedata.com/time_series');
-  url.searchParams.set('symbol', symbol);
+  url.searchParams.set('symbol', resolvedSymbol);
   url.searchParams.set('interval', interval);
   url.searchParams.set('outputsize', '120');
   url.searchParams.set('timezone', 'UTC');
   url.searchParams.set('apikey', apiKey);
 
-  const res = await fetch(url.toString(), { method: 'GET' });
-  const data = await res.json();
-
-  if (!res.ok || data.status === 'error') {
-    throw new Error(`Twelve Data ${symbol} ${interval}: ${data.message || 'request failed'}`);
-  }
-
+  const data = await twelveGet(url.toString());
   const candles = parseCandles(data);
+
   if (candles.length < 60) {
-    throw new Error(`Not enough candles for ${symbol} ${interval}`);
+    throw new Error(`Not enough candles for ${resolvedSymbol} ${interval}`);
   }
 
   return candles;
+}
+
+function minutesUntil(iso) {
+  return Math.round((new Date(iso).getTime() - Date.now()) / 60000);
 }
 
 function getLondonHour(date = new Date()) {
@@ -463,7 +521,9 @@ function markTopPick(signals, minScore) {
 
 async function buildSignalForAsset(asset, apiKey) {
   try {
-    const candles = await fetchCandles(asset.symbol, '15min', apiKey);
+    const resolvedSymbol = await resolveTwelveSymbol(asset.symbol, apiKey);
+    await delay(250);
+    const candles = await fetchCandles(resolvedSymbol, '15min', apiKey);
     return buildIndexSignal(asset, candles);
   } catch (error) {
     const fallback = buildFallbackSignal(asset);
@@ -539,7 +599,7 @@ export async function handler() {
     for (const asset of assets) {
       const signal = await buildSignalForAsset(asset, twelveDataApiKey);
       signals.push(signal);
-      await delay(350);
+      await delay(500);
     }
 
     let finalSignals = applyNews(signals, newsEvents || []);
@@ -587,7 +647,6 @@ export async function handler() {
       .neq('timeframe', SCAN_TIMEFRAME);
 
     if (cleanupError) {
-      // not fatal
       console.warn('Cleanup warning:', cleanupError.message);
     }
 
